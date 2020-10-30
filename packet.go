@@ -13,6 +13,7 @@ import (
 )
 
 var (
+	errDisconnect            = errors.New("remote closed the connection")
 	errLongPacket            = errors.New("packet too long")
 	errShortPacket           = errors.New("packet too short")
 	errUnknownExtendedPacket = errors.New("unknown extended packet")
@@ -146,7 +147,7 @@ func recvPacket(r io.Reader, alloc *allocator, orderID uint32) (uint8, []byte, e
 	} else {
 		b = make([]byte, 4)
 	}
-	if _, err := io.ReadFull(r, b[:4]); err != nil {
+	if err := readFull(r, b[:4]); err != nil {
 		return 0, nil, err
 	}
 	length, _ := unmarshalUint32(b)
@@ -157,7 +158,7 @@ func recvPacket(r io.Reader, alloc *allocator, orderID uint32) (uint8, []byte, e
 	if alloc == nil {
 		b = make([]byte, length)
 	}
-	if _, err := io.ReadFull(r, b[:length]); err != nil {
+	if err := readFull(r, b[:length]); err != nil {
 		debug("recv packet %d bytes: err %v", length, err)
 		return 0, nil, err
 	}
@@ -167,6 +168,14 @@ func recvPacket(r io.Reader, alloc *allocator, orderID uint32) (uint8, []byte, e
 		debug("recv packet: %s %d bytes", fxp(b[0]), length)
 	}
 	return b[0], b[1:length], nil
+}
+
+func readFull(r io.Reader, buf []byte) error {
+	_, err := io.ReadFull(r, buf)
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		err = errDisconnect
+	}
+	return err
 }
 
 type extensionPair struct {

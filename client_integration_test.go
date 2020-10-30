@@ -1833,7 +1833,8 @@ func TestServerRoughDisconnect(t *testing.T) {
 		cmd.Process.Kill()
 	}()
 
-	io.Copy(ioutil.Discard, f)
+	_, err = io.Copy(ioutil.Discard, f)
+	require.Equal(t, errDisconnect, err)
 }
 
 // sftp/issue/181, abrupt server hangup would result in client hangs.
@@ -1861,6 +1862,7 @@ func TestServerRoughDisconnect2(t *testing.T) {
 	for {
 		_, err = f.Read(b)
 		if err != nil {
+			require.Equal(t, errDisconnect, err)
 			break
 		}
 	}
@@ -1891,7 +1893,8 @@ func TestServerRoughDisconnect3(t *testing.T) {
 		cmd.Process.Kill()
 	}()
 
-	io.Copy(rf, lf)
+	_, err = io.Copy(rf, lf)
+	require.Error(t, err)
 }
 
 // sftp/issue/234 - also affected Write
@@ -1928,6 +1931,7 @@ func TestServerRoughDisconnect4(t *testing.T) {
 	}
 
 	io.Copy(rf, lf)
+	require.Error(t, err)
 }
 
 // sftp/issue/26 writing to a read only file caused client to loop.
