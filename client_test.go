@@ -228,3 +228,25 @@ func TestClientZeroLengthPacket(t *testing.T) {
 		c.Close()
 	}
 }
+
+func TestClientRemoteDisconnect(t *testing.T) {
+	for _, packet := range [][]byte{
+		nil, // No packet.
+		{0, 0, 0, 10},
+		{0, 0, 0, 10, sshFxpVersion},
+		{0, 0, 0, 10, sshFxpVersion, 0, 0, 0},
+	} {
+
+		r := bytes.NewReader(packet)
+		c, err := NewClientPipe(r, &sink{})
+		// We want an error that is not EOF, since this error is passed
+		// up the chain by File.Read and friends. Those must be able to
+		// distinguish an actual EOF from a connection error.
+		if err == nil || err == io.EOF || err == io.ErrUnexpectedEOF {
+			t.Error("wrong error:", err)
+		}
+		if c != nil {
+			c.Close()
+		}
+	}
+}

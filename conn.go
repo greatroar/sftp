@@ -73,6 +73,19 @@ func (c *clientConn) loop() {
 	}
 }
 
+var errDisconnect = errors.New("remote disconnected")
+
+// mustRecvPacket is like conn.recvPacket, but returns an error other than EOF
+// if no packet or an incomplete packet was received so that File.Read does not
+// signal end of file when the connection was closed unexpectedly.
+func (c *clientConn) mustRecvPacket(orderID uint32) (uint8, []byte, error) {
+	typ, packet, err := recvPacket(c, c.alloc, orderID)
+	if err == io.EOF || err == io.ErrUnexpectedEOF {
+		err = errDisconnect
+	}
+	return typ, packet, err
+}
+
 // recv continuously reads from the server and forwards responses to the
 // appropriate channel.
 func (c *clientConn) recv() error {
@@ -80,7 +93,7 @@ func (c *clientConn) recv() error {
 		c.conn.Close()
 	}()
 	for {
-		typ, data, err := c.recvPacket(0)
+		typ, data, err := c.mustRecvPacket(0)
 		if err != nil {
 			return err
 		}

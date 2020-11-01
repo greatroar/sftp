@@ -215,7 +215,7 @@ func (c *Client) nextID() uint32 {
 }
 
 func (c *Client) recvVersion() error {
-	typ, data, err := c.recvPacket(0)
+	typ, data, err := c.mustRecvPacket(0)
 	if err != nil {
 		return err
 	}
