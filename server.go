@@ -367,7 +367,11 @@ func (svr *Server) Serve() error {
 		fmt.Fprintf(svr.debugStream, "sftp server file with handle %q left open: %v\n", handle, file.Name())
 		file.Close()
 	}
-	return err // error from recvPacket
+
+	if err == errDisconnect { // The client is free to disconnect at any time.
+		err = io.EOF
+	}
+	return err
 }
 
 type ider interface {

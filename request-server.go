@@ -173,6 +173,9 @@ func (rs *RequestServer) Serve() error {
 		req.close()
 	}
 
+	if err == errDisconnect { // The client is free to disconnect at any time.
+		err = io.EOF
+	}
 	return err
 }
 
