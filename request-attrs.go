@@ -58,6 +58,10 @@ func (a FileStat) FileMode() os.FileMode {
 // Attributes parses file attributes byte blob and return them in a
 // FileStat object.
 func (r *Request) Attributes() *FileStat {
-	fs, _ := getFileStat(r.Flags, r.Attrs)
+	p := recvPool.New().(*receivedPacket)
+	p.Write(r.Attrs)
+	fs, _ := getFileStat(r.Flags, p)
+	p.release()
+
 	return fs
 }

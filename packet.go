@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"sync"
 
 	"github.com/pkg/errors"
 )
@@ -158,38 +159,127 @@ func sendPacket(w io.Writer, m encoding.BinaryMarshaler) error {
 	return nil
 }
 
-func recvPacket(r io.Reader, alloc *allocator, orderID uint32) (uint8, []byte, error) {
-	var b []byte
-	if alloc != nil {
-		b = alloc.GetPage(orderID)
-	} else {
-		b = make([]byte, 4)
+type receivedPacket struct {
+	bytes.Buffer
+	Type uint8
+	ID   uint32           // Request ID. Zero for init and version packets.
+	lr   io.LimitedReader // Cached for readN.
+}
+
+// recvPacket reads a full packet from r.
+//
+// It reads the type, length and request ID (if any) from the packet.
+// Further reads start beyond those fields.
+func recvPacket(r io.Reader) (*receivedPacket, error) {
+	const minPacketSize = 4 + 1 // id + type
+
+	p := recvPool.Get().(*receivedPacket)
+	if err := p.readN(r, minPacketSize); err != nil {
+		return nil, err
 	}
-	if _, err := io.ReadFull(r, b[:4]); err != nil {
-		return 0, nil, err
-	}
-	length, _ := unmarshalUint32(b)
+	length, _ := p.unmarshalUint32()
 	if length > maxMsgLength {
 		debug("recv packet %d bytes too long", length)
-		return 0, nil, errLongPacket
+		return nil, errLongPacket
 	}
 	if length == 0 {
 		debug("recv packet of 0 bytes too short")
-		return 0, nil, errShortPacket
+		return nil, errShortPacket
 	}
-	if alloc == nil {
-		b = make([]byte, length)
-	}
-	if _, err := io.ReadFull(r, b[:length]); err != nil {
+	p.Type = p.Next(1)[0]
+
+	// Read length-1 bytes, because we already have the type.
+	if err := p.readN(r, int(length)-1); err != nil {
 		debug("recv packet %d bytes: err %v", length, err)
-		return 0, nil, err
+		return nil, err
 	}
 	if debugDumpRxPacketBytes {
-		debug("recv packet: %s %d bytes %x", fxp(b[0]), length, b[1:length])
+		debug("recv packet: %s %d bytes %x", fxp(p.Type), length, p.Bytes())
 	} else if debugDumpRxPacket {
-		debug("recv packet: %s %d bytes", fxp(b[0]), length)
+		debug("recv packet: %s %d bytes", fxp(p.Type), length)
 	}
-	return b[0], b[1:length], nil
+
+	switch p.Type {
+	case sshFxpInit, sshFxpVersion: // These don't have a request id.
+	default:
+		id, err := p.unmarshalUint32()
+		if err != nil {
+			return nil, err
+		}
+		p.ID = id
+	}
+
+	return p, nil
+}
+
+var recvPool = sync.Pool{
+	New: func() interface{} { return &receivedPacket{} },
+}
+
+func (p *receivedPacket) bytesLeft() int {
+	return p.Len()
+}
+
+func (p *receivedPacket) release() {
+	p.Reset()
+	p.lr.R = nil
+	recvPool.Put(p)
+}
+
+func (p *receivedPacket) unmarshalExtensionPair() (ep extensionPair, err error) {
+	ep.Name, err = p.unmarshalString()
+	ep.Data, err = p.unmarshalString()
+	return ep, err
+}
+
+func (p *receivedPacket) checkID(want uint32) error {
+	if p.ID != want {
+		//return &unexpectedIDErr{want: want, got: p.ID}
+		return errors.Errorf("want %v, got %v", want, p.ID)
+	}
+	return nil
+}
+
+func (p *receivedPacket) unmarshalString() (string, error) {
+	l, err := p.unmarshalUint32()
+	if err != nil {
+		return "", err
+	}
+	b := p.Next(int(l))
+	if len(b) < int(l) {
+		return "", errShortPacket
+	}
+	return string(b), nil
+}
+
+func (p *receivedPacket) unmarshalUint32() (uint32, error) {
+	b := p.Next(4)
+	if len(b) < 4 {
+		return 0, errShortPacket
+	}
+	return binary.BigEndian.Uint32(b), nil
+}
+
+func (p *receivedPacket) unmarshalUint64() (uint64, error) {
+	b := p.Next(8)
+	if len(b) < 8 {
+		return 0, errShortPacket
+	}
+	return binary.BigEndian.Uint64(b), nil
+}
+
+func (p *receivedPacket) readN(r io.Reader, n int) error {
+	// io.CopyN allocates, so we use a preallocated LimitedReader instead.
+	p.lr.R = r
+	p.lr.N = int64(n)
+
+	read, err := p.ReadFrom(&p.lr)
+	p.lr.R = nil // Don't retain r in case user forgets p.release().
+
+	if read < int64(n) && err == nil {
+		return io.ErrUnexpectedEOF
+	}
+	return err
 }
 
 type extensionPair struct {
@@ -943,20 +1033,6 @@ func (p *sshFxpDataPacket) MarshalBinary() ([]byte, error) {
 	binary.BigEndian.PutUint32(b[5:9], p.ID)
 	binary.BigEndian.PutUint32(b[9:13], p.Length)
 	return b, nil
-}
-
-func (p *sshFxpDataPacket) UnmarshalBinary(b []byte) error {
-	var err error
-	if p.ID, b, err = unmarshalUint32Safe(b); err != nil {
-		return err
-	} else if p.Length, b, err = unmarshalUint32Safe(b); err != nil {
-		return err
-	} else if uint32(len(b)) < p.Length {
-		return errShortPacket
-	}
-
-	p.Data = b[:p.Length]
-	return nil
 }
 
 type sshFxpStatvfsPacket struct {

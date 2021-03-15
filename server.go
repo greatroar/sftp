@@ -335,16 +335,15 @@ func (svr *Server) Serve() error {
 
 	var err error
 	var pkt requestPacket
-	var pktType uint8
-	var pktBytes []byte
+	var recv *receivedPacket
 	for {
-		pktType, pktBytes, err = svr.serverConn.recvPacket(svr.pktMgr.getNextOrderID())
+		recv, err = svr.serverConn.recvPacket()
 		if err != nil {
 			// we don't care about releasing allocated pages here, the server will quit and the allocator freed
 			break
 		}
 
-		pkt, err = makePacket(rxPacket{fxp(pktType), pktBytes})
+		pkt, err = makePacket(fxp(recv.Type), recv.Bytes())
 		if err != nil {
 			switch errors.Cause(err) {
 			case errUnknownExtendedPacket:

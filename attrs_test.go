@@ -35,9 +35,14 @@ var unmarshalAttrsTests = []struct {
 
 func TestUnmarshalAttrs(t *testing.T) {
 	for _, tt := range unmarshalAttrsTests {
-		stat, rest := unmarshalAttrs(tt.b)
+		pkt := &receivedPacket{Buffer: *bytes.NewBuffer(tt.b)}
+		stat, err := unmarshalAttrs(pkt)
+		if err != nil {
+			t.Fatal(err)
+		}
 		got := fileInfoFromStat(stat, "")
 		tt.want.sys = got.Sys()
+		rest := pkt.Bytes()
 		if !reflect.DeepEqual(got, tt.want) || !bytes.Equal(tt.rest, rest) {
 			t.Errorf("unmarshalAttrs(%#v): want %#v, %#v, got: %#v, %#v", tt.b, tt.want, tt.rest, got, rest)
 		}

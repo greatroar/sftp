@@ -139,7 +139,9 @@ func TestUnmarshalStatus(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := unmarshalStatus(tt.reqID, tt.status)
+		var pkt receivedPacket
+		pkt.Buffer = *bytes.NewBuffer(tt.status)
+		got := unmarshalStatus(tt.reqID, &pkt)
 		if !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("unmarshalStatus(%v, %v), test %q\n- want: %#v\n-  got: %#v",
 				requestID, tt.status, tt.desc, tt.want, got)
@@ -237,5 +239,23 @@ func TestClientShortPacket(t *testing.T) {
 	_, err := NewClientPipe(r, &sink{})
 	if !errors.Is(err, errShortPacket) {
 		t.Fatalf("expected error: %v, got: %v", errShortPacket, err)
+	}
+}
+
+// Issue #418: panic in clientConn.recv when the sid is incomplete.
+func TestClientNoSid(t *testing.T) {
+	stream := new(bytes.Buffer)
+	sendPacket(stream, &sshFxVersionPacket{Version: sftpProtocolVersion})
+	// Next packet has the sid cut short after two bytes.
+	stream.Write([]byte{0, 0, 0, 10, 0, 0})
+
+	c, err := NewClientPipe(stream, &sink{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = c.Stat("anything")
+	if !errors.Is(err, ErrSSHFxConnectionLost) {
+		t.Fatal("expected ErrSSHFxConnectionLost, got", err)
 	}
 }

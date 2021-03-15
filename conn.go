@@ -20,10 +20,8 @@ type conn struct {
 	sendPacketTest func(w io.Writer, m encoding.BinaryMarshaler) error
 }
 
-// the orderID is used in server mode if the allocator is enabled.
-// For the client mode just pass 0
-func (c *conn) recvPacket(orderID uint32) (uint8, []byte, error) {
-	return recvPacket(c, c.alloc, orderID)
+func (c *conn) recvPacket() (*receivedPacket, error) {
+	return recvPacket(c)
 }
 
 func (c *conn) sendPacket(m encoding.BinaryMarshaler) error {
@@ -75,26 +73,25 @@ func (c *clientConn) loop() {
 }
 
 // recv continuously reads from the server and forwards responses to the
-// appropriate channel.
+// appropriate channel. It strips the sid off the packet.
 func (c *clientConn) recv() error {
 	defer c.conn.Close()
 
 	for {
-		typ, data, err := c.recvPacket(0)
+		p, err := recvPacket(c)
 		if err != nil {
 			return err
 		}
-		sid, _ := unmarshalUint32(data)
 
-		ch, ok := c.getChannel(sid)
+		ch, ok := c.getChannel(p.ID)
 		if !ok {
 			// This is an unexpected occurrence. Send the error
 			// back to all listeners so that they terminate
 			// gracefully.
-			return errors.Errorf("sid not found: %v", sid)
+			return errors.Errorf("sid not found: %v", p.ID)
 		}
 
-		ch <- result{typ: typ, data: data}
+		ch <- result{packet: p}
 	}
 }
 
@@ -124,11 +121,10 @@ func (c *clientConn) getChannel(sid uint32) (chan<- result, bool) {
 	return ch, ok
 }
 
-// result captures the result of receiving the a packet from the server
+// result captures the result of receiving a packet from the server
 type result struct {
-	typ  byte
-	data []byte
-	err  error
+	packet *receivedPacket
+	err    error
 }
 
 type idmarshaler interface {
@@ -136,14 +132,14 @@ type idmarshaler interface {
 	encoding.BinaryMarshaler
 }
 
-func (c *clientConn) sendPacket(ch chan result, p idmarshaler) (byte, []byte, error) {
+func (c *clientConn) sendPacket(ch chan result, p idmarshaler) (*receivedPacket, error) {
 	if cap(ch) < 1 {
 		ch = make(chan result, 1)
 	}
 
 	c.dispatchRequest(ch, p)
 	s := <-ch
-	return s.typ, s.data, s.err
+	return s.packet, s.err
 }
 
 // dispatchRequest should ideally only be called by race-detection tests outside of this file,

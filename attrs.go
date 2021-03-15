@@ -96,43 +96,43 @@ func fileStatFromInfo(fi os.FileInfo) (uint32, FileStat) {
 	return flags, fileStat
 }
 
-func unmarshalAttrs(b []byte) (*FileStat, []byte) {
-	flags, b := unmarshalUint32(b)
-	return getFileStat(flags, b)
+func unmarshalAttrs(p *receivedPacket) (*FileStat, error) {
+	flags, _ := p.unmarshalUint32()
+	return getFileStat(flags, p)
 }
 
-func getFileStat(flags uint32, b []byte) (*FileStat, []byte) {
-	var fs FileStat
+func getFileStat(flags uint32, p *receivedPacket) (fs *FileStat, err error) {
+	fs = new(FileStat)
 	if flags&sshFileXferAttrSize == sshFileXferAttrSize {
-		fs.Size, b, _ = unmarshalUint64Safe(b)
+		fs.Size, err = p.unmarshalUint64()
 	}
 	if flags&sshFileXferAttrUIDGID == sshFileXferAttrUIDGID {
-		fs.UID, b, _ = unmarshalUint32Safe(b)
+		fs.UID, err = p.unmarshalUint32()
 	}
 	if flags&sshFileXferAttrUIDGID == sshFileXferAttrUIDGID {
-		fs.GID, b, _ = unmarshalUint32Safe(b)
+		fs.GID, err = p.unmarshalUint32()
 	}
 	if flags&sshFileXferAttrPermissions == sshFileXferAttrPermissions {
-		fs.Mode, b, _ = unmarshalUint32Safe(b)
+		fs.Mode, err = p.unmarshalUint32()
 	}
 	if flags&sshFileXferAttrACmodTime == sshFileXferAttrACmodTime {
-		fs.Atime, b, _ = unmarshalUint32Safe(b)
-		fs.Mtime, b, _ = unmarshalUint32Safe(b)
+		fs.Atime, err = p.unmarshalUint32()
+		fs.Mtime, err = p.unmarshalUint32()
 	}
 	if flags&sshFileXferAttrExtented == sshFileXferAttrExtented {
 		var count uint32
-		count, b, _ = unmarshalUint32Safe(b)
+		count, err = p.unmarshalUint32()
 		ext := make([]StatExtended, count)
 		for i := uint32(0); i < count; i++ {
 			var typ string
 			var data string
-			typ, b, _ = unmarshalStringSafe(b)
-			data, b, _ = unmarshalStringSafe(b)
+			typ, err = p.unmarshalString()
+			data, err = p.unmarshalString()
 			ext[i] = StatExtended{typ, data}
 		}
 		fs.Extended = ext
 	}
-	return &fs, b
+	return fs, err
 }
 
 func marshalFileInfo(b []byte, fi os.FileInfo) []byte {

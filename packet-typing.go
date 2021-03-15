@@ -81,9 +81,9 @@ func (p *StatVFS) id() uint32            { return p.ID }
 func (p *sshFxVersionPacket) id() uint32 { return 0 }
 
 // take raw incoming packet data and build packet objects
-func makePacket(p rxPacket) (requestPacket, error) {
+func makePacket(typ fxp, data []byte) (requestPacket, error) {
 	var pkt requestPacket
-	switch p.pktType {
+	switch typ {
 	case sshFxpInit:
 		pkt = &sshFxInitPacket{}
 	case sshFxpLstat:
@@ -125,9 +125,9 @@ func makePacket(p rxPacket) (requestPacket, error) {
 	case sshFxpExtended:
 		pkt = &sshFxpExtendedPacket{}
 	default:
-		return nil, errors.Errorf("unhandled packet type: %s", p.pktType)
+		return nil, errors.Errorf("unhandled packet type: %s", typ)
 	}
-	if err := pkt.UnmarshalBinary(p.pktBytes); err != nil {
+	if err := pkt.UnmarshalBinary(data); err != nil {
 		// Return partially unpacked packet to allow callers to return
 		// error messages appropriately with necessary id() method.
 		return pkt, err

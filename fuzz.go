@@ -17,6 +17,13 @@ func Fuzz(data []byte) int {
 	if err != nil {
 		return 0
 	}
+
+	c.Getwd()
+	c.Lstat(".")
+	c.ReadDir(".")
+	c.RealPath(".")
+	c.Stat(".")
+
 	c.Close()
 	return 1
 }

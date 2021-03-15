@@ -1359,11 +1359,7 @@ func TestClientRead(t *testing.T) {
 // and the hash of the contents.
 func readHash(t *testing.T, r io.Reader) (string, int64) {
 	h := sha1.New()
-	tr := io.TeeReader(r, h)
-	read, err := io.Copy(ioutil.Discard, tr)
-	if err != nil {
-		t.Fatal(err)
-	}
+	read, _ := io.Copy(h, r)
 	return string(h.Sum(nil)), read
 }
 
@@ -2649,7 +2645,7 @@ func benchmarkCopyUp(b *testing.B, fileSize int64, delay time.Duration) {
 		defer src.Close()
 		n, err := io.Copy(dst, src)
 		if err != nil {
-			b.Fatalf("copy error: %v", err)
+			b.Fatalf("copy error: %+v", err)
 		}
 		if n < fileSize {
 			b.Fatal("unable to copy all bytes")

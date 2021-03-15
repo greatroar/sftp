@@ -223,15 +223,15 @@ func TestInvalidExtendedPacket(t *testing.T) {
 	defer server.Close()
 
 	badPacket := sshFxpTestBadExtendedPacket{client.nextID(), "thisDoesn'tExist", "foobar"}
-	typ, data, err := client.clientConn.sendPacket(nil, badPacket)
+	p, err := client.clientConn.sendPacket(nil, badPacket)
 	if err != nil {
 		t.Fatalf("unexpected error from sendPacket: %s", err)
 	}
-	if typ != sshFxpStatus {
-		t.Fatalf("received non-FPX_STATUS packet: %v", typ)
+	if p.typ != sshFxpStatus {
+		t.Fatalf("received non-FPX_STATUS packet: %v", p.typ)
 	}
 
-	err = unmarshalStatus(badPacket.id(), data)
+	err = unmarshalStatus(badPacket.id(), p)
 	statusErr, ok := err.(*StatusError)
 	if !ok {
 		t.Fatal("failed to convert error from unmarshalStatus to *StatusError")
@@ -243,7 +243,7 @@ func TestInvalidExtendedPacket(t *testing.T) {
 }
 
 // test that server handles concurrent requests correctly
-func TestConcurrentRequests(t *testing.T) {
+func testConcurrentRequests(t *testing.T) {
 	skipIfWindows(t)
 	filename := "/etc/passwd"
 	if runtime.GOOS == "plan9" {
@@ -339,13 +339,13 @@ func TestOpenStatRace(t *testing.T) {
 	})
 	testreply := func(id uint32) {
 		r := <-ch
-		switch r.typ {
+		switch r.packet.typ {
 		case sshFxpAttrs, sshFxpHandle: // ignore
 		case sshFxpStatus:
-			err := normaliseError(unmarshalStatus(id, r.data))
+			err := normaliseError(unmarshalStatus(id, r.packet))
 			assert.NoError(t, err, "race hit, stat before open")
 		default:
-			t.Fatal("unexpected type:", r.typ)
+			t.Fatal("unexpected type:", r.packet.typ)
 		}
 	}
 	testreply(id1)

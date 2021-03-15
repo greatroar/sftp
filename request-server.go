@@ -110,17 +110,16 @@ func (rs *RequestServer) serveLoop(pktChan chan<- orderedRequest) error {
 
 	var err error
 	var pkt requestPacket
-	var pktType uint8
-	var pktBytes []byte
+	var recv *receivedPacket
 
 	for {
-		pktType, pktBytes, err = rs.serverConn.recvPacket(rs.pktMgr.getNextOrderID())
+		recv, err = rs.serverConn.recvPacket()
 		if err != nil {
 			// we don't care about releasing allocated pages here, the server will quit and the allocator freed
 			return err
 		}
 
-		pkt, err = makePacket(rxPacket{fxp(pktType), pktBytes})
+		pkt, err = makePacket(fxp(recv.Type), recv.Bytes())
 		if err != nil {
 			switch errors.Cause(err) {
 			case errUnknownExtendedPacket:
